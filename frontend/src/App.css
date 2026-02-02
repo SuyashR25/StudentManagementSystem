@@ -1,0 +1,58 @@
+.app-container {
+  display: flex;
+  min-height: 100vh;
+  background-color: var(--bg-dark);
+  color: white;
+  position: relative;
+  overflow: hidden;
+}
+
+.main-content {
+  flex: 1;
+  padding: 2rem;
+  margin-left: 260px;
+  /* Width of sidebar */
+  min-height: 100vh;
+  position: relative;
+  z-index: 10;
+  overflow-y: auto;
+}
+
+/* Background Decorative Blobs */
+.bg-blob {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(120px);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.blob-1 {
+  top: -10%;
+  left: -10%;
+  width: 600px;
+  height: 600px;
+  background: rgba(43, 140, 238, 0.15);
+}
+
+.blob-2 {
+  bottom: -10%;
+  right: -10%;
+  width: 700px;
+  height: 700px;
+  background: rgba(139, 92, 246, 0.1);
+}
+
+@media (max-width: 1024px) {
+  .main-content {
+    margin-left: 0;
+    padding: 1.5rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .main-content {
+    padding: 1rem;
+    padding-top: 1rem;
+  }
+}

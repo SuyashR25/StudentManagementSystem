@@ -1,0 +1,12 @@
+/ai_scheduler/uploads
+/ai_scheduler/test_payload.json
+/ai_scheduler/run_test.py
+
+/data
+
+/README.node_modules
+/test_course_api.py
+/test.py
+/frontend/stitch_student_dashboard_overview
+/.env
+/.env.local

@@ -1,0 +1,36 @@
+.dashboard-page {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+    animation: fade-in 0.4s ease-out;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+}
+
+@media (min-width: 768px) {
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (min-width: 1280px) {
+    .stats-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+.bottom-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+}
+
+@media (min-width: 768px) {
+    .bottom-grid {
+        grid-template-columns: 2fr 1fr;
+    }
+}
