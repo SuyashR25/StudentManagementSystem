@@ -3,9 +3,6 @@ from typing import List
 from langchain_core.tools import tool
 from models import ScheduleEvent
 
-# ============================================================================
-# GOOGLE CALENDAR SETUP (MOCKED / REMOVED)
-# ============================================================================
 
 def get_calendar_service():
     """Placeholder for removed service."""
@@ -67,8 +64,9 @@ def add_event(title: str, start_datetime: str, end_datetime: str, priority: str 
         description=description,
         source="agent"
     )
-    db_manager.add_schedule_event(event, user_id=user_id)
-    return f"Successfully added event: {title}"
+    added = db_manager.add_schedule_event(event, user_id=user_id)
+    if not added:
+        return f"Skipped: Event '{title}' at {start_datetime} is already in the calendar."
     return f"Successfully added event: {title}"
 
 @tool

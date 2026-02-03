@@ -23,9 +23,7 @@ from database import db_manager, checkpointer
 from rag_engine import vector_manager
 from utils import get_current_calendar_events, create_calendar_event
 
-# ============================================================================
-# RESPONSE SYNTHESIZER
-# ============================================================================
+
 
 def response_synthesizer(state: MultiAgentState) -> dict:
     """

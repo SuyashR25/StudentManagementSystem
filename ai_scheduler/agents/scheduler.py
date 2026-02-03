@@ -31,37 +31,50 @@ Information extracted from user documents:
     today_val = today_now.strftime("%Y-%m-%d")
     day_name = today_now.strftime("%A")
 
+    # Generate next 14 days mapping for absolute accuracy
+    date_mapping = []
+    for i in range(14):
+        future_date = today_now + datetime.timedelta(days=i)
+        date_mapping.append(f"- {future_date.strftime('%A')}: {future_date.strftime('%Y-%m-%d')}")
+    date_context = "\n".join(date_mapping)
+
     prompt = ChatPromptTemplate.from_messages([
-        ("system", """You are a high-level Scheduling & Execution Agent. You manage the user's calendar by combining direct instructions with information retrieved from academic documents.
+        ("system", f"""You are a high-level Scheduling & Execution Agent. You manage the user's calendar by combining direct instructions with information retrieved from academic documents.
 
 Your capabilities:
 1. **Search/List**: Use 'search_calendar' or 'list_calendar_events' to see the current state of the calendar.
-2. **Calendar CRUD**: Use 'add_event', 'update_calendar_event', 'delete_calendar_event', or 'delete_events_on_date' to modify the schedule.
+2. **Calendar CRUD**: Use 'add_event', 'update_calendar_event', 'delete_calendar_event', 'delete_events_on_date', or 'clear_full_calendar' to modify the schedule.
 3. **Contextual awareness**: Use 'get_current_date' to resolve relative time (e.g., "next Monday").
 
 If a user wants to schedule classes from a timetable (provided in RAG context):
-- CREATE A SEPARATE 'add_event' CALL FOR EACH INDIVIDUAL CLASS SLOT.
-- Schedule them for the upcoming week based on today's date.
-- Do NOT group multiple classes into one event.
+- ONLY add events if the user's query is about scheduling or adding classes.
+- If the user's query is to CLEAR, DELETE, or SEARCH, do that FIRST and IGNORE the RAG timetable unless specifically asked to add it.
+- YOU MUST CALL 'add_event' SEPARATELY FOR EVERY SINGLE CLASS SLOT FOUND IN THE RAG CONTEXT (if adding).
+- USE THE DATE MAPPING BELOW to resolve day names (e.g., "Monday") to the correct date.
+- Pick the FIRST occurrence of that day name starting from today ({today_val}) or the next week as appropriate.
+- DO NOT schedule everything on the same day. Use the date that matches the day name.
+- DO NOT summarize classes in text until you have made the tool calls.
 
-{rag_context}
+**CRITICAL CLEARING INSTRUCTION:**
+If the user asks to "clear", "wipe", "delete everything", or "reset" the calendar, you MUST immediately call `clear_full_calendar` as your FIRST and ONLY tool call. Do NOT call list_calendar_events or retrieve_from_docs first. Just call clear_full_calendar directly.
 
-Today's Date: {today} ({day_name})
+Upcoming Date Mapping (Next 14 Days):
+{date_context}
 
-{format_instructions}"""),
-        ("human", "Scheduling Request: {query}")
+Today's Date: {today_val} ({day_name})
+
+{{rag_context}}
+
+{{format_instructions}}"""),
+        ("human", "Scheduling Request: {{query}}")
     ])
-    
     try:
         # Initial invocation
         response = scheduler_llm.invoke(prompt.format(
             query=query,
             rag_context=rag_context,
-            today=today_val,
-            day_name=day_name,
             format_instructions=parser.get_format_instructions()
         ))
-        
         # --- TOOL CALL LOOP (Handles CRUD tools) ---
         iterations = 0
         executed_actions = set() # Track unique actions to prevent loops (except read-only)
@@ -72,7 +85,7 @@ Today's Date: {today} ({day_name})
                 get_current_date, list_calendar_events, search_calendar, add_event, 
                 delete_calendar_event, delete_events_on_date, update_calendar_event, 
                 clear_full_calendar, list_available_courses, enroll_student_in_course, 
-                unenroll_student_from_course, get_my_enrolled_courses
+                unenroll_student_from_course, get_my_enrolled_courses, retrieve_from_docs
             )
             tool_map = {
                 "get_current_date": get_current_date,
@@ -86,7 +99,8 @@ Today's Date: {today} ({day_name})
                 "list_available_courses": list_available_courses,
                 "enroll_student_in_course": enroll_student_in_course,
                 "unenroll_student_from_course": unenroll_student_from_course,
-                "get_my_enrolled_courses": get_my_enrolled_courses
+                "get_my_enrolled_courses": get_my_enrolled_courses,
+                "retrieve_from_docs": retrieve_from_docs
             }
             
             tool_context = []
@@ -94,12 +108,15 @@ Today's Date: {today} ({day_name})
             
             for tool_call in response.tool_calls:
                 t_name = tool_call["name"]
-                t_args = json.dumps(tool_call["args"], sort_keys=True) 
-                action_signature = f"{t_name}:{t_args}"
+                t_args_str = json.dumps(tool_call["args"], sort_keys=True) 
+                action_signature = f"{t_name}:{t_args_str}" # Use for tracking executed actions
+                
+                print(f"DEBUG: Executing tool '{t_name}' with args {t_args_str}")
                 
                 # Check for duplicates, but allow read-only tools to re-run
                 if action_signature in executed_actions:
-                    if t_name not in ["get_current_date", "list_calendar_events", "search_calendar"]:
+                    if t_name not in ["list_calendar_events", "search_calendar", "retrieve_from_docs"]: # Updated condition from instruction
+                        print(f"DEBUG: Skipping duplicate tool call: {t_name}")
                         tool_context.append(f"Result for already executed action: {t_name} was successful.")
                         continue
                     
@@ -115,11 +132,16 @@ Today's Date: {today} ({day_name})
                                 t_args["user_id"] = 1
 
                         res = tool_map[t_name].invoke(t_args)
+                        print(f"DEBUG: Tool '{t_name}' returned: {str(res)[:100]}")
                         tool_context.append(f"Tool Result ({t_name}): {res}")
                         executed_actions.add(action_signature)
                         new_actions_performed = True
                     except Exception as e:
+                        print(f"DEBUG: Tool '{t_name}' error: {e}")
                         tool_context.append(f"Tool Error ({t_name}): {str(e)}")
+                else:
+                    print(f"DEBUG: Tool '{t_name}' not in tool_map!")
+                    tool_context.append(f"Action: {t_name} -> Error: Tool not found")
             
             # Smart Breaking Condition
             if not new_actions_performed:
@@ -131,10 +153,8 @@ Today's Date: {today} ({day_name})
             if tool_context:
                 query_with_tools = f"{query}\n\nHistory of Executed Actions:\n" + "\n".join(tool_context)
                 response = scheduler_llm.invoke(prompt.format(
-                    query=query_with_tools + "\n\nCRITICAL: All requested actions have been executed. Provide a final summary of what you did and return it in the JSON 'scheduling_rationale' field.",
+                    query=query_with_tools + "\n\nCRITICAL: DO NOT call add_event for events that are already 'Successfully added' or 'Skipped' in the History above. Provide a final summary and return the JSON 'scheduling_rationale'.",
                     rag_context=rag_context,
-                    today=today_val,
-                    day_name=day_name,
                     format_instructions=parser.get_format_instructions()
                 ))
             else:

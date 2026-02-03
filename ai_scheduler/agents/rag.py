@@ -30,12 +30,10 @@ def rag_agent(state: MultiAgentState) -> dict:
                      actual_path = os.path.join(UPLOAD_DIR, os.path.basename(path))
                  
                  if os.path.exists(actual_path):
-                     print(f"DEBUG: Loading text from {actual_path}")
                      text = vector_manager.load_document_text(actual_path)
                      if text:
                          # Limit size to prevent overflow (e.g., 5k chars)
                          if len(text) > 5000: text = text[:5000] + "...(truncated)"
-                         print(f"DEBUG: Successfully loaded {len(text)} chars from {actual_path}")
                          direct_context.append(f"--- DOCUMENT: {os.path.basename(actual_path)} ---\n{text}")
                      else:
                          print(f"DEBUG: WARNING - Document text is EMPTY for {actual_path}")
@@ -83,8 +81,9 @@ def rag_agent(state: MultiAgentState) -> dict:
     Rules:
     1. Extract ALL recurring classes, labs, and tutorials from the context into the 'extracted_timetable' list.
     2. LOOK FOR TABLE PATTERNS: If you see "Monday", "Tuesday", etc. followed by times (8:30-9:25), these are CLASSES.
-    3. For 'extracted_timetable' entries, include the course name, day of week, start_time, and end_time precisely as found in the text.
-    4. Provide a helpful synthesized answer summarizing what you found.
+    3. If there are NO classes found, return an empty list: [].
+    4. For 'extracted_timetable' entries, include the course name, day of week, start_time, and end_time precisely as found in the text.
+    5. Provide a helpful synthesized answer summarizing exactly how many items you found.
 
     You MUST respond with a JSON block.
     
@@ -96,8 +95,10 @@ def rag_agent(state: MultiAgentState) -> dict:
 
     You MUST respond with valid JSON in this format:
     {{
-      "synthesized_answer": "Your summary here",
-      "extracted_deadlines": [],
+      "synthesized_answer": "Extracted X classes and Y deadlines.",
+      "extracted_deadlines": [
+         {{"title": "Assignment", "due_date": "YYYY-MM-DD", "description": "..."}}
+      ],
       "extracted_tasks": [],
       "extracted_timetable": [
         {{"course": "Course Name", "day": "Monday", "start_time": "HH:MM", "end_time": "HH:MM", "location": "Room"}}
@@ -119,26 +120,32 @@ def rag_agent(state: MultiAgentState) -> dict:
         
         # Parsing Logic
         content = response.content if isinstance(response.content, str) else str(response.content)
-        print(f"DEBUG: RAG Agent Raw LLM Response: {content[:300]}...")
+        print(f"DEBUG: RAG Agent Raw LLM Response FULL: {content}")
         clean_content = content.strip()
         
         # Robust JSON extraction
+        json_str = ""
         if "```json" in clean_content:
             import re
             match = re.search(r"```json(.*?)```", clean_content, re.DOTALL)
             if match:
-                clean_content = match.group(1).strip()
-        elif "{" in clean_content and "}" in clean_content:
-             # Find last valid JSON object?
-             # Simple greedy heuristic
-             start_index = clean_content.find("{")
-             end_index = clean_content.rfind("}") + 1
-             clean_content = clean_content[start_index:end_index]
+                json_str = match.group(1).strip()
+        
+        if not json_str:
+            # Fallback: look for generic { }
+            start_index = clean_content.find("{")
+            end_index = clean_content.rfind("}") + 1
+            if start_index != -1 and end_index > start_index:
+                json_str = clean_content[start_index:end_index]
+            else:
+                json_str = clean_content
 
         try:
-            data = json_lib.loads(clean_content)
+            data = json_lib.loads(json_str)
             parsed = RAGOutput(**data)
-        except:
+            print(f"DEBUG: RAG Agent successfully extracted {len(parsed.extracted_timetable)} classes")
+        except Exception as e:
+            print(f"DEBUG: RAG Agent parsing ERROR: {e}")
             # Try partial cleaning
             try:
                 parsed = parser.parse(clean_content)

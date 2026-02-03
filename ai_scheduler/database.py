@@ -272,16 +272,29 @@ class DatabaseManager:
         except Exception:
             return False
 
-    def add_schedule_event(self, event: ScheduleEvent, user_id: int):
-        print(f"DEBUG: Attempting to add event '{event.title}' for user {user_id} at {event.start_datetime}")
+    def add_schedule_event(self, event: ScheduleEvent, user_id: int) -> bool:
+        """Adds a new event to the calendar, preventing duplicates."""
         with sqlite3.connect(self.secondary_db, timeout=30.0) as conn:
             cursor = conn.cursor()
+            
+            # 1. Idempotency Check: Don't add if the same user has the same title at the same time
+            cursor.execute("""
+                SELECT id FROM user_schedule 
+                WHERE user_id = ? AND title = ? AND start_datetime = ?
+            """, (user_id, event.title, event.start_datetime))
+            
+            if cursor.fetchone():
+                print(f"DEBUG: Skipping duplicate event: '{event.title}' at {event.start_datetime}")
+                return False
+
+            # 2. Add New Event
             cursor.execute("""
                 INSERT INTO user_schedule (user_id, title, start_datetime, end_datetime, priority, category, description, source)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (user_id, event.title, event.start_datetime, event.end_datetime, event.priority, event.category, event.description, event.source))
             conn.commit()
-            print(f"DEBUG: Event added successfully. Rowcount: {cursor.rowcount}")
+            print(f"DEBUG: Event added successfully. ID: {cursor.lastrowid}")
+            return True
 
     def get_upcoming_events(self, user_id: int, limit: int = 50) -> List[dict]:
         with sqlite3.connect(self.secondary_db, timeout=30.0) as conn:

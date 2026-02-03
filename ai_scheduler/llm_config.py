@@ -8,7 +8,6 @@ load_dotenv(os.path.join(PARENT_DIR, ".env.local"))
 load_dotenv(os.path.join(PARENT_DIR, ".env"))
 load_dotenv() # Final fallback to local .env
 
-from langchain_huggingface import HuggingFaceEndpoint, ChatHuggingFace
 from langchain_openai import ChatOpenAI
 from utils import (
     get_current_date, list_calendar_events, search_calendar, add_event, 
@@ -18,15 +17,6 @@ from utils import (
     unenroll_student_from_course, get_my_enrolled_courses
 )
 
-
-# init_llm = HuggingFaceEndpoint(
-#     repo_id = "openai/gpt-oss-120b",
-#     task = "text-generation",
-#     max_new_tokens = 512,
-#     temperature = 0.1,
-#     huggingfacehub_api_token = os.getenv("HUGGINGFACEHUB_API_TOKEN")
-# )
-# llm = ChatHuggingFace(llm=init_llm)
 
 llm = ChatOpenAI(
     model = "openai/gpt-oss-120b",

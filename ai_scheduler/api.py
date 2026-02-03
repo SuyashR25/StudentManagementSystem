@@ -16,16 +16,12 @@ from models import TodoItem
 
 load_dotenv()
 
-# ============================================================================
-# CONSTANTS & SETUP
-# ============================================================================
+
 
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# ============================================================================
-# API KEY AUTHENTICATION
-# ============================================================================
+
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
@@ -39,15 +35,9 @@ def get_api_key(api_key: str = Security(api_key_header)):
         detail="Invalid or missing API Key"
     )
 
-# ============================================================================
-# FASTAPI APP SETUP
-# ============================================================================
-
 app = FastAPI(title="Ched Agentic Backend API")
 
-# ============================================================================
-# TODO ENDPOINTS
-# ============================================================================
+
 
 class TodoRequest(BaseModel):
     user_id: str = "1"

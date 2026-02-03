@@ -1,7 +1,7 @@
 import { TrendingUp, Award, GraduationCap, MapPin, Clock } from 'lucide-react';
 import './StatsCards.css';
 
-export const CGPACard = ({ cgpa = 0.0, maxCgpa = 4.0, trend = 'Consistent improvement' }) => {
+export const CGPACard = ({ cgpa = 0.0, maxCgpa = 10.0, trend = 'Consistent improvement' }) => {
     const percentage = (cgpa / maxCgpa) * 100;
 
     return (

@@ -49,15 +49,17 @@ Agent Types:
 - chat: General conversation, greetings, help requests, unclear queries
 
 Rules for Routing:
-1. If the user mentions "this file", "the document", "my syllabus", "timetable", or "from the PDF", route to 'rag'.
-2. If the user wants to extract tasks/timetable/events from a document, route to 'rag'.
-3. If the user wants to PLAN/SCHEDULE based on document information, route to 'scheduler' and set 'requires_context' to true.
-4. Only use 'calendar' if the user wants to see their existing saved calendar events, not document data.
+1. ANY request to DELETE, CLEAR, REMOVE, or WIPE events MUST be routed to 'scheduler'. Never route deletions to 'calendar'.
+2. If 'pdf_paths' is NOT empty and the query is about scheduling, tasks, or information, YOU MUST route to 'rag' first (or set 'requires_context' to true).
+3. If the user mentions "this file", "the document", "my syllabus", "timetable", or "from the PDF", route to 'rag'.
+4. If the user wants to PLAN/SCHEDULE based on document information, route to 'scheduler' and set 'requires_context' to true (this triggers a RAG lookup first).
+5. Use 'calendar' ONLY for reading existing events already in the database.
 {pdf_hint}
 
 {format_instructions}
 
-Be decisive and quick. Extract key entities (dates, tasks, subjects) from the query."""),
+Be decisive and quick. Extract key entities (dates, tasks, subjects) from the query. Ensure 'requires_context' is False for simple deletions.
+"""),
         ("human", "User Query: {query}")
     ])
     
@@ -88,19 +90,27 @@ Be decisive and quick. Extract key entities (dates, tasks, subjects) from the qu
 
         try:
             parsed = parser.parse(clean_content)
+            print(f"DEBUG: Orchestrator detected intent: {parsed.intent}")
         except Exception as pe:
-            # Naive fallback for intent detection
-            lower_content = clean_content.lower()
-            detected_intent = AgentType.CHAT
-            if any(k in lower_content for k in ["rag", "pdf", "document", "timetable", "syllabus"]):
+            # Prioritize scheduler for modifications
+            requires_context = False
+            if any(k in lower_content for k in ["clear", "delete", "remove", "update", "schedule", "add"]):
+                detected_intent = AgentType.SCHEDULER
+                # Only require context if specifically asking about documents or adding from them
+                if "from" in lower_content or "pdf" in lower_content or "document" in lower_content:
+                    requires_context = True
+            elif any(k in lower_content for k in ["rag", "pdf", "document", "timetable", "syllabus"]):
                 detected_intent = AgentType.RAG
-            elif "schedule" in lower_content or "calendar" in lower_content:
-                detected_intent = AgentType.SCHEDULER if "schedule" in lower_content else AgentType.CALENDAR
+                requires_context = True
+            elif "calendar" in lower_content or "events" in lower_content:
+                detected_intent = AgentType.CALENDAR
             
+            print(f"DEBUG: Orchestrator FALLBACK intent: {detected_intent}, requires_context: {requires_context}")
             parsed = OrchestratorOutput(
                 intent=detected_intent,
                 confidence=0.4,
                 query_summary=user_query,
+                requires_context=requires_context,
                 reasoning=f"Naive fallback due to parsing error: {str(pe)}"
             )
 
