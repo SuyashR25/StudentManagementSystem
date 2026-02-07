@@ -3,10 +3,12 @@
 /ai_scheduler/run_test.py
 
 /data
-
+/ai_scheduler/__pycache__
+/ai_scheduler/agents/__pycache__
 /README.node_modules
 /test_course_api.py
 /test.py
 /frontend/stitch_student_dashboard_overview
 /.env
 /.env.local
+/TimeTable_CSE_4thSem.pdf

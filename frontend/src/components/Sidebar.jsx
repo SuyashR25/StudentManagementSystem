@@ -16,7 +16,7 @@ const navItems = [
     { path: '/calendar', icon: Calendar, label: 'Calendar' },
     { path: '/grades', icon: GraduationCap, label: 'Grades' },
     { path: '/focus', icon: Timer, label: 'Focus Timer' },
-    { path: '/settings', icon: Settings, label: 'Settings' },
+    { path: '/settings', icon: User, label: 'Profile' },
 ];
 
 const Sidebar = () => {

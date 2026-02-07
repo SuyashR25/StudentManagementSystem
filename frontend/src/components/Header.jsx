@@ -1,4 +1,4 @@
-import { Bell, Plus, Menu } from 'lucide-react';
+import { Menu } from 'lucide-react';
 import './Header.css';
 
 const Header = ({ title, subtitle, onMenuClick }) => {
@@ -22,16 +22,7 @@ const Header = ({ title, subtitle, onMenuClick }) => {
                     </p>
                 </div>
             </div>
-            <div className="header-right">
-                <button className="notification-btn glass-card">
-                    <Bell size={20} />
-                    <span className="notification-dot"></span>
-                </button>
-                <button className="btn btn-primary new-project-btn">
-                    <Plus size={18} />
-                    <span>New Project</span>
-                </button>
-            </div>
+
         </header>
     );
 };

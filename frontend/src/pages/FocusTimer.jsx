@@ -3,11 +3,15 @@ import { Play, Pause, RotateCcw, Settings2, ExternalLink, Sparkles, Flame, SkipF
 import './FocusTimer.css';
 
 const FocusTimer = () => {
+    const durationOptions = [15, 25, 45, 60]; // Available duration options in minutes
+    const [selectedDuration, setSelectedDuration] = useState(25); // Default 25 minutes
     const [time, setTime] = useState(25 * 60); // 25 minutes in seconds
     const [isRunning, setIsRunning] = useState(false);
     const [sessionName, setSessionName] = useState('Mastering Calculus Derivatives');
     const [streak, setStreak] = useState(3);
     const [totalFocus, setTotalFocus] = useState('45m');
+    const [showSettings, setShowSettings] = useState(false);
+    const [customMinutes, setCustomMinutes] = useState('');
     const intervalRef = useRef(null);
 
     useEffect(() => {
@@ -34,10 +38,33 @@ const FocusTimer = () => {
 
     const resetTimer = () => {
         setIsRunning(false);
-        setTime(25 * 60);
+        setTime(selectedDuration * 60);
     };
 
-    const progress = ((25 * 60 - time) / (25 * 60)) * 100;
+    const handleDurationChange = (duration) => {
+        if (!isRunning) {
+            setSelectedDuration(duration);
+            setTime(duration * 60);
+        }
+    };
+
+    const toggleSettings = () => {
+        if (!isRunning) {
+            setShowSettings(!showSettings);
+        }
+    };
+
+    const handleCustomTime = () => {
+        const mins = parseInt(customMinutes);
+        if (mins > 0 && mins <= 180) {
+            setSelectedDuration(mins);
+            setTime(mins * 60);
+            setCustomMinutes('');
+            setShowSettings(false);
+        }
+    };
+
+    const progress = ((selectedDuration * 60 - time) / (selectedDuration * 60)) * 100;
     const circumference = 2 * Math.PI * 140;
     const strokeDashoffset = circumference - (progress / 100) * circumference;
 
@@ -70,6 +97,19 @@ const FocusTimer = () => {
                         className="session-input"
                     />
                     <button className="edit-btn">✏️</button>
+                </div>
+
+                <div className="duration-selector">
+                    {durationOptions.map((duration) => (
+                        <button
+                            key={duration}
+                            className={`duration-btn ${selectedDuration === duration ? 'active' : ''}`}
+                            onClick={() => handleDurationChange(duration)}
+                            disabled={isRunning}
+                        >
+                            {duration}m
+                        </button>
+                    ))}
                 </div>
 
                 <div className="timer-section">
@@ -120,10 +160,33 @@ const FocusTimer = () => {
                             {isRunning ? <Pause size={24} /> : <Play size={24} />}
                             <span>{isRunning ? 'Pause' : 'Start'}</span>
                         </button>
-                        <button className="control-btn settings">
+                        <button
+                            className={`control-btn settings ${showSettings ? 'active' : ''}`}
+                            onClick={toggleSettings}
+                            disabled={isRunning}
+                        >
                             <Settings2 size={20} />
                         </button>
                     </div>
+
+                    {showSettings && (
+                        <div className="settings-panel glass-card">
+                            <h4>Custom Duration</h4>
+                            <div className="custom-time-input">
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="180"
+                                    placeholder="Enter minutes"
+                                    value={customMinutes}
+                                    onChange={(e) => setCustomMinutes(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleCustomTime()}
+                                />
+                                <button onClick={handleCustomTime}>Set</button>
+                            </div>
+                            <p className="settings-hint">Enter 1-180 minutes</p>
+                        </div>
+                    )}
                 </div>
 
                 <div className="help-card glass-card">
@@ -142,14 +205,6 @@ const FocusTimer = () => {
             </div>
 
             <div className="focus-footer">
-                <div className="streak-info">
-                    <Flame size={18} className="flame-icon" />
-                    <span>{streak} Days</span>
-                </div>
-                <div className="total-focus">
-                    <span>Focus</span>
-                    <strong>{totalFocus}</strong>
-                </div>
                 <div className="music-controls">
                     <button className="music-skip">
                         <SkipForward size={14} />

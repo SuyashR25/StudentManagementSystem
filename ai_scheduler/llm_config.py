@@ -9,6 +9,7 @@ load_dotenv(os.path.join(PARENT_DIR, ".env"))
 load_dotenv() # Final fallback to local .env
 
 from langchain_openai import ChatOpenAI
+from langchain_huggingface import HuggingFaceEndpoint, ChatHuggingFace
 from utils import (
     get_current_date, list_calendar_events, search_calendar, add_event, 
     delete_calendar_event, delete_events_on_date, update_calendar_event, 
@@ -18,13 +19,20 @@ from utils import (
 )
 
 
-llm = ChatOpenAI(
-    model = "openai/gpt-oss-120b",
-    base_url = "https://openrouter.ai/api/v1",
-    api_key = os.getenv("OPENROUTER_API_KEY"),
-    max_tokens = 512,
-    temperature = 0.1
+# llm = ChatOpenAI(
+#     model = "openai/gpt-oss-120b",
+#     base_url = "https://openrouter.ai/api/v1",
+#     api_key = os.getenv("OPENROUTER_API_KEY"),
+#     max_tokens = 512,
+#     temperature = 0.1
+# )
+temp_llm = HuggingFaceEndpoint(
+    repo_id="openai/gpt-oss-120b",
+    task="text-generation",
+    temperature=0.1
 )
+llm = ChatHuggingFace(llm=temp_llm)
+
 # Tools list
 tools = [
     get_current_date, list_calendar_events, search_calendar, add_event, 

@@ -1,8 +1,6 @@
 import json
 import datetime
-import re
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import PydanticOutputParser
 from models import MultiAgentState, SchedulerOutput, CurrentState
 from llm_config import scheduler_llm
 from database import db_manager
@@ -15,8 +13,6 @@ def scheduler_agent(state: MultiAgentState) -> dict:
     query = state.get("user_query", "")
     rag_output = state.get("rag_output", {})
     current_state = state.get("current_state", {})
-    
-    parser = PydanticOutputParser(pydantic_object=SchedulerOutput)
     
     # Extract context from RAG if available
     rag_context = ""
@@ -38,13 +34,22 @@ Information extracted from user documents:
         date_mapping.append(f"- {future_date.strftime('%A')}: {future_date.strftime('%Y-%m-%d')}")
     date_context = "\n".join(date_mapping)
 
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", f"""You are a high-level Scheduling & Execution Agent. You manage the user's calendar by combining direct instructions with information retrieved from academic documents.
+    # Build the prompt - note: we don't use format_instructions since we're using tool calling
+    # The model should call tools directly, not output JSON in a specific format
+    system_message = f"""You are a high-level Scheduling & Execution Agent. You manage the user's calendar by combining direct instructions with information retrieved from academic documents.
 
 Your capabilities:
 1. **Search/List**: Use 'search_calendar' or 'list_calendar_events' to see the current state of the calendar.
 2. **Calendar CRUD**: Use 'add_event', 'update_calendar_event', 'delete_calendar_event', 'delete_events_on_date', or 'clear_full_calendar' to modify the schedule.
 3. **Contextual awareness**: Use 'get_current_date' to resolve relative time (e.g., "next Monday").
+
+**PRIORITY LEVELS - CRITICAL:**
+When adding or updating events, you MUST set the `priority` field appropriately based on the event type:
+- **High**: Exams, finals, midterms, quizzes, tests, vivas, presentations, submission deadlines, important meetings
+- **Medium**: Assignments, projects, homework, labs with deliverables, study sessions, group work
+- **Low**: Regular lectures, tutorials, classes, recurring sessions, office hours, general reminders
+
+If the user explicitly specifies a priority (e.g., "high priority", "urgent", "important"), use that. Otherwise, infer from the event type as described above.
 
 If a user wants to schedule classes from a timetable (provided in RAG context):
 - ONLY add events if the user's query is about scheduling or adding classes.
@@ -56,28 +61,33 @@ If a user wants to schedule classes from a timetable (provided in RAG context):
 - DO NOT summarize classes in text until you have made the tool calls.
 
 **CRITICAL CLEARING INSTRUCTION:**
-If the user asks to "clear", "wipe", "delete everything", or "reset" the calendar, you MUST immediately call `clear_full_calendar` as your FIRST and ONLY tool call. Do NOT call list_calendar_events or retrieve_from_docs first. Just call clear_full_calendar directly.
+If the user asks to "clear", "wipe", "delete everything", "delete all", or "reset" the calendar, you MUST immediately call `clear_full_calendar` as your FIRST and ONLY tool call. Do NOT call list_calendar_events or retrieve_from_docs first. Just call clear_full_calendar directly.
 
 Upcoming Date Mapping (Next 14 Days):
 {date_context}
 
 Today's Date: {today_val} ({day_name})
 
-{{rag_context}}
+{rag_context}
 
-{{format_instructions}}"""),
-        ("human", "Scheduling Request: {{query}}")
+After completing the requested actions via tool calls, provide a brief summary of what was done."""
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_message),
+        ("human", "Scheduling Request: {query}")
     ])
     try:
-        # Initial invocation
-        response = scheduler_llm.invoke(prompt.format(
-            query=query,
-            rag_context=rag_context,
-            format_instructions=parser.get_format_instructions()
-        ))
+        # Initial invocation - only pass query since rag_context is already in system_message
+        response = scheduler_llm.invoke(prompt.format(query=query))
+        
+        # DEBUG: Check what the LLM returned
+        print(f"DEBUG scheduler_agent: tool_calls={response.tool_calls if hasattr(response, 'tool_calls') else 'None'}")
+        print(f"DEBUG scheduler_agent: content_start={str(response.content)[:100] if response.content else 'Empty'}")
+        
         # --- TOOL CALL LOOP (Handles CRUD tools) ---
         iterations = 0
         executed_actions = set() # Track unique actions to prevent loops (except read-only)
+        all_tool_results = []  # Collect all tool results for summary generation
         
         while hasattr(response, "tool_calls") and response.tool_calls and iterations < 6:
             iterations += 1
@@ -134,6 +144,7 @@ Today's Date: {today_val} ({day_name})
                         res = tool_map[t_name].invoke(t_args)
                         print(f"DEBUG: Tool '{t_name}' returned: {str(res)[:100]}")
                         tool_context.append(f"Tool Result ({t_name}): {res}")
+                        all_tool_results.append({"tool": t_name, "args": t_args, "result": str(res)})
                         executed_actions.add(action_signature)
                         new_actions_performed = True
                     except Exception as e:
@@ -153,41 +164,53 @@ Today's Date: {today_val} ({day_name})
             if tool_context:
                 query_with_tools = f"{query}\n\nHistory of Executed Actions:\n" + "\n".join(tool_context)
                 response = scheduler_llm.invoke(prompt.format(
-                    query=query_with_tools + "\n\nCRITICAL: DO NOT call add_event for events that are already 'Successfully added' or 'Skipped' in the History above. Provide a final summary and return the JSON 'scheduling_rationale'.",
-                    rag_context=rag_context,
-                    format_instructions=parser.get_format_instructions()
+                    query=query_with_tools + "\n\nCRITICAL: DO NOT call add_event for events that are already 'Successfully added' or 'Skipped' in the History above. Provide a final summary of what was done."
                 ))
             else:
                 break
  # executed 0 tools? break.
 
-        # Validation and Parsing Logic
+        # Build output from response content
         content = response.content if isinstance(response.content, str) else str(response.content)
         
-        parsed = None
-        # 1. Direct Parse
-        try:
-            parsed = parser.parse(content)
-        except:
-            pass
-            
-        # 2. Extract JSON
-        if parsed is None and "```json" in content:
-            match = re.search(r"```json(.*?)```", content, re.DOTALL)
-            if match:
-                try:
-                    parsed = parser.parse(match.group(1).strip())
-                except:
-                    pass
+        # Clean generic thinking tags
+        clean_text = content.replace("<tool_code>", "").replace("</tool_code>", "").strip()
         
-        # 3. Fallback to Text
-        if parsed is None:
-            # Clean generic thinking tags
-            clean_text = content.replace("<tool_code>", "").replace("</tool_code>", "")
-            parsed = SchedulerOutput(
-                scheduling_rationale=clean_text,
-                proposed_events=[]
-            )
+        # If LLM didn't provide a meaningful summary, build one from tool results
+        if not clean_text or len(clean_text) < 10:
+            if all_tool_results:
+                summary_lines = []
+                for tr in all_tool_results:
+                    tool_name = tr["tool"]
+                    result = tr["result"]
+                    # Create user-friendly summary based on tool type
+                    if tool_name == "add_event":
+                        summary_lines.append(f"• {result}")
+                    elif tool_name == "delete_calendar_event":
+                        summary_lines.append(f"• {result}")
+                    elif tool_name == "delete_events_on_date":
+                        summary_lines.append(f"• {result}")
+                    elif tool_name == "update_calendar_event":
+                        summary_lines.append(f"• {result}")
+                    elif tool_name == "clear_full_calendar":
+                        summary_lines.append(f"• {result}")
+                    elif tool_name in ["list_calendar_events", "search_calendar"]:
+                        pass  # Don't include read-only operations in summary
+                    else:
+                        summary_lines.append(f"• {tool_name}: {result}")
+                
+                if summary_lines:
+                    clean_text = "Here's what I did:\n" + "\n".join(summary_lines)
+                else:
+                    clean_text = "Scheduling operations completed successfully."
+            else:
+                clean_text = "No scheduling changes were made."
+        
+        # Create the output using SchedulerOutput model
+        parsed = SchedulerOutput(
+            scheduling_rationale=clean_text,
+            proposed_events=[]
+        )
 
         return {
             "scheduler_output": parsed.model_dump(),
